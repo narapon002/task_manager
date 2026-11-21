@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>โปรโตไทป์ติดตามโปรเจค (ทดลอง)</title>
+<title>ติดตามโปรเจค</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -239,6 +239,15 @@ td .sub{font-size:var(--fs-sm);color:var(--ink-2);margin-top:2px}
 .toast svg{color:#7EE2A8;flex-shrink:0}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
+.toast.err{background:var(--danger)} .toast.err svg{color:#fff}
+.gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:52px;border:1px solid var(--line);background:#fff;border-radius:var(--r-md);font-weight:600;font-size:var(--fs-lg);color:var(--ink)}
+.gbtn:hover{border-color:var(--accent);background:var(--accent-soft)}
+.gbtn[disabled]{opacity:.6;cursor:wait}
+.notice{padding:12px 14px;border-radius:var(--r-sm);font-size:var(--fs-sm)}
+.notice.err{background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger-line)}
+.notice.info{background:var(--accent-soft);color:var(--accent)}
+.loading{min-height:100%;display:grid;place-items:center;color:var(--ink-2)}
+.sync{font-size:var(--fs-xs);color:var(--ink-3);display:flex;align-items:center;gap:6px}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 
 /* Responsive */
@@ -297,7 +306,13 @@ td .sub{font-size:var(--fs-sm);color:var(--ink-2);margin-top:2px}
 <body>
 <div id="app"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+/* ---------- การเชื่อมต่อ Supabase (publishable key ใช้ฝั่งเบราว์เซอร์ได้ ความปลอดภัยคุมด้วย RLS) ---------- */
+const SUPABASE_URL = 'https://tkzpxogdzebkizxxznrr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_E_GnAW32u9jcv8xoOVs60w_v7sMuTbq';
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c === 'x' ? r : (r&0x3|0x8)).toString(16); }));
 const TODAY = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
 const MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const ROLE_LABEL = {MD:'MD (ผู้บริหาร)', PM:'ผู้จัดการฝ่าย', HEAD:'หัวหน้าแผนก', STAFF:'พนักงานปฏิบัติการ', ADMIN:'แอดมิน'};
@@ -308,15 +323,7 @@ const ST = {
   pending:['รอหัวหน้ายืนยัน','#FFFAEB','#B54708'],
   done:['เสร็จแล้ว','#ECFDF3','#067647']
 };
-const USERS = [
-  {id:'MD',name:'คุณวิชัย',role:'MD',dept:'ผู้บริหาร',pos:'ผู้บริหารสูงสุด',active:true},
-  {id:'PM',name:'คุณสุภาพร',role:'PM',dept:'การตลาด',pos:'ผู้จัดการฝ่ายการตลาด',active:true},
-  {id:'HEAD',name:'คุณสมชาย',role:'HEAD',dept:'การตลาด',pos:'หัวหน้าแผนกวางแผนการตลาด',active:true},
-  {id:'STAFF',name:'คุณมาลี',role:'STAFF',dept:'การตลาด',pos:'เจ้าหน้าที่การตลาด',active:true},
-  {id:'ADMIN',name:'คุณปิยะ',role:'ADMIN',dept:'ไอที',pos:'ผู้ดูแลระบบ',active:true},
-  {id:'U6',name:'คุณสุดา',role:'STAFF',dept:'คุณภาพ',pos:'เจ้าหน้าที่คุณภาพ',active:true},
-  {id:'U7',name:'คุณเอก',role:'STAFF',dept:'คุณภาพ',pos:'เจ้าหน้าที่คุณภาพ',active:false}
-];
+let USERS = [];
 const PAGES = [
   {k:'dashboard', label:'แดชบอร์ด', show:r=>['MD','PM','HEAD','ADMIN'].includes(r)},
   {k:'projects', label:'โปรเจค', show:()=>true},
@@ -326,21 +333,9 @@ const PAGES = [
   {k:'activity', label:'ประวัติการใช้งาน', show:r=>['MD','ADMIN'].includes(r)}
 ];
 let S = {
-  user:null, page:'dashboard', view:'list', pid:'p1', form:null, err:'',
-  projects:[{id:'p1',name:'ปรับปรุงช่องทางจัดจำหน่าย',desc:'ปรับปรุงช่องทางขายออนไลน์และร้านค้าปลีกให้เชื่อมกัน',dept:'การตลาด',owner:'PM',start:'2026-11-01',due:'2026-12-15'}],
-  tasks:[
-    {id:'t1',pid:'p1',creator:'PM',name:'วิเคราะห์ความต้องการ',assignee:'STAFF',dept:'การตลาด',status:'done',start:'2026-11-01',due:'2026-11-10',reason:'',dependsOn:''},
-    {id:'t2',pid:'p1',creator:'PM',name:'ออกแบบหน้าจอ',assignee:'STAFF',dept:'การตลาด',status:'blocked',start:'2026-11-11',due:'2026-11-27',reason:'รอสีแบรนด์จากฝ่ายการตลาด',dependsOn:'t1'},
-    {id:'t3',pid:'p1',creator:'PM',name:'พัฒนาหน้าจอ',assignee:'HEAD',dept:'การตลาด',status:'todo',start:'2026-11-28',due:'2026-12-10',reason:'',dependsOn:'t2'},
-    {id:'t4',pid:'p1',creator:'PM',name:'ทดสอบและเปิดใช้งาน',assignee:'HEAD',dept:'การตลาด',status:'todo',start:'2026-12-11',due:'2026-12-15',reason:'',dependsOn:'t3'}
-  ],
-  recs:[
-    {id:'r1',name:'ตรวจราคาคู่แข่งรายวัน',freq:'ทุกวัน เวลา 09:00 น.',owner:'STAFF',active:true},
-    {id:'r2',name:'รายงานยอดขายประจำสัปดาห์',freq:'ทุกวันจันทร์',owner:'STAFF',active:true},
-    {id:'r3',name:'ตรวจเอกสารคุณภาพรายเดือน',freq:'วันที่ 1 ของทุกเดือน',owner:'ADMIN',active:false}
-  ],
-  templates:[{id:'tp1',name:'โปรเจคโปรโมชั่นรายเดือน',tasks:[['วางแผนโปรโมชั่น','2026-11-21','2026-11-25'],['ทำคอนเทนต์','2026-11-26','2026-11-30'],['ตรวจราคาก่อนเผยแพร่','2026-12-01','2026-12-05']]}],
-  log:[{at:'09:40',who:'คุณปิยะ',text:'เริ่มโปรโตไทป์ทดลอง'}]
+  user:null, page:'dashboard', view:'list', pid:'', tid:'', form:null, err:'',
+  boot:true, authErr:'', authEmail:'', busy:false, ops:[],
+  projects:[], tasks:[], recs:[], templates:[], log:[]
 };
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -357,7 +352,8 @@ const isTaskCreator = t => !!S.user && t.creator === S.user.id;
 const wouldCycle = (tid, depId) => { let cur = depId, guard = 0; while (cur && guard++ < 100) { if (cur === tid) return true; const x = T(cur); cur = x ? x.dependsOn : ''; } return false; };
 const tag = st => '<span class="chip st-'+st+'">'+ST[st][0]+'</span>';
 const errHtml = () => S.err ? '<div class="form-err" role="alert">'+I.alert+'<span>'+esc(S.err)+'</span></div>' : '';
-function log(text){ S.log.unshift({at:nowLabel(), who:S.user.name, text}); }
+function log(text){ S.log.unshift({at:fd(TODAY)+' '+nowLabel(), who:S.user.name, text}); queue('activity_log','insert',{actor_id:S.user.id, text}); }
+function queue(table, type, row, id){ S.ops.push({table, type, row, id}); }
 
 /* ---------- presentation helpers (no business logic) ---------- */
 const I = {
@@ -455,9 +451,17 @@ function timeline(ts){
     + rows + '</div>';
 }
 
+const GOOGLE_ICO = '<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 function loginPage(){
-  const btns = USERS.filter(u => u.active).map(u => '<button class="acct" data-act="login" data-id="'+u.id+'">'+av(u.id, true)+'<span><span class="r" style="display:block">'+ROLE_LABEL[u.role]+'</span><span class="n">'+esc(u.name)+', ฝ่าย'+esc(u.dept)+'</span></span><span class="go">'+I.chev+'</span></button>').join('');
-  return '<main class="login"><div class="card"><div class="brand" style="padding:0"><span class="brand-mark">'+I.grain+'</span><div><b>ติดตามโปรเจค</b><span>โปรโตไทป์ทดลอง</span></div></div><h1>เข้าสู่ระบบ</h1><div class="muted">เลือกบัญชีตัวอย่างเพื่อทดลองใช้งานในแต่ละบทบาท ยังไม่ต้องกรอกรหัสผ่านในเวอร์ชันนี้</div><div class="accts">'+btns+'</div></div></main>';
+  if (S.boot) return '<main class="loading"><div class="muted">กำลังโหลด…</div></main>';
+  const brand = '<div class="brand" style="padding:0"><span class="brand-mark">'+I.grain+'</span><div><b>ติดตามโปรเจค</b><span>ระบบติดตามโปรเจคและงาน</span></div></div>';
+  if (S.authEmail) {
+    return '<main class="login"><div class="card">'+brand+'<h1>ยังไม่มีสิทธิ์เข้าใช้งาน</h1><div class="notice err" role="alert">บัญชี <b>'+esc(S.authEmail)+'</b> '+esc(S.authErr || 'ยังไม่ได้ลงทะเบียนในระบบ หรือถูกปิดการใช้งาน')+'</div><div class="muted">กรุณาติดต่อแอดมินให้เพิ่มอีเมลนี้ในหน้าจัดการผู้ใช้ แล้วเข้าสู่ระบบอีกครั้ง</div><button class="btn" data-act="logout">ออกจากระบบและใช้บัญชีอื่น</button></div></main>';
+  }
+  return '<main class="login"><div class="card">'+brand+'<h1>เข้าสู่ระบบ</h1><div class="muted">เข้าสู่ระบบด้วยบัญชี Google (Gmail) ที่แอดมินลงทะเบียนไว้ให้</div>'
+    + (S.authErr ? '<div class="notice err" role="alert">'+esc(S.authErr)+'</div>' : '')
+    + (!sb ? '<div class="notice err" role="alert">โหลดไลบรารี Supabase ไม่สำเร็จ กรุณาตรวจการเชื่อมต่ออินเทอร์เน็ตแล้วรีเฟรชหน้า</div>' : '')
+    + '<button class="gbtn" data-act="googleLogin"'+(S.busy||!sb?' disabled':'')+'>'+GOOGLE_ICO+'<span>'+(S.busy?'กำลังไปที่ Google…':'เข้าสู่ระบบด้วย Google')+'</span></button></div></main>';
 }
 
 function taskItem(t, extra){
@@ -545,7 +549,7 @@ function taskForm(p){
   const deps = ts.map(t => '<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
   const body = field('nt-name','ชื่อ Task',inp('nt-name','aria-required="true" placeholder="เช่น ถ่ายภาพสินค้าข้าวถุง 5 กก."'),{req:1,full:1})
     + field('nt-desc','รายละเอียดงาน','<textarea id="nt-desc" rows="3" placeholder="สิ่งที่ต้องทำ ผลลัพธ์ที่ต้องการ"></textarea>',{full:1})
-    + field('nt-assignee','ผู้รับผิดชอบ','<select id="nt-assignee">'+assignees+'</select>')
+    + field('nt-assignee','ผู้รับผิดชอบ','<select id="nt-assignee" aria-required="true">'+(assignees || '<option value="">ยังไม่มีผู้ใช้ที่มอบหมายงานได้</option>')+'</select>',{req:1,hint: assignees ? '' : 'เพิ่มผู้ใช้บทบาทผู้จัดการฝ่าย หัวหน้าแผนก หรือพนักงานก่อน'})
     + field('nt-dep','ทำหลังงาน','<select id="nt-dep"><option value="">ไม่มี</option>'+deps+'</select>',{hint:'งานที่ต้องเสร็จก่อนเริ่มงานนี้'})
     + field('nt-start','วันเริ่ม',inp('nt-start','type="date" aria-required="true" value="'+TODAY+'"'),{req:1})
     + field('nt-due','กำหนดส่ง',inp('nt-due','type="date" aria-required="true"'),{req:1,hint:'ต้องไม่ก่อนวันเริ่ม'});
@@ -633,7 +637,8 @@ function recurringPage(){
 function userFields(pfx, x){
   const roles = Object.keys(ROLE_LABEL).map(r => '<option value="'+r+'"'+(x && r === x.role ? ' selected' : '')+'>'+esc(ROLE_LABEL[r])+'</option>').join('');
   const v = k => x ? ' value="'+esc(x[k])+'"' : '';
-  return field(pfx+'-name','ชื่อ-นามสกุล',inp(pfx+'-name','aria-required="true"'+v('name')),{req:1})
+  return field(pfx+'-email','อีเมล Gmail',inp(pfx+'-email','type="email" aria-required="true" autocomplete="off" placeholder="name@gmail.com"'+v('email')),{req:1,full:1,hint:'ใช้อีเมลนี้เข้าสู่ระบบด้วย Google'})
+    + field(pfx+'-name','ชื่อ-นามสกุล',inp(pfx+'-name','aria-required="true"'+v('name')),{req:1})
     + field(pfx+'-pos','ตำแหน่ง',inp(pfx+'-pos','aria-required="true"'+v('pos')),{req:1})
     + field(pfx+'-dept','ฝ่าย',inp(pfx+'-dept','aria-required="true" placeholder="เช่น การตลาด"'+v('dept')),{req:1})
     + field(pfx+'-role','บทบาท','<select id="'+pfx+'-role" aria-required="true">'+roles+'</select>',{req:1});
@@ -649,7 +654,7 @@ function editUserForm(id){
 }
 
 function usersPage(){
-  const rows = USERS.map(u => '<tr><td class="lead"><span class="who">'+av(u.id)+'<span><span style="font-weight:600;display:block">'+esc(u.name)+'</span><span class="sub" style="display:block">'+esc(u.pos)+'</span></span></span></td><td data-label="บทบาท">'+esc(ROLE_LABEL[u.role])+'</td><td data-label="ฝ่าย">'+esc(u.dept)+'</td><td data-label="สถานะ">'+(u.active?'<span class="chip st-done">ใช้งานอยู่</span>':'<span class="chip st-off">ปิดการใช้งาน</span>')+'</td><td data-label="จัดการ"><div class="actions">'+(can('createUser')?'<button class="btn sm" data-act="openEditUser" data-id="'+u.id+'">แก้ไข</button>':'')+(can('manageUsers')&&u.id!==S.user.id?'<button class="btn sm '+(u.active?'ghost':'')+'" data-act="toggleUser" data-id="'+u.id+'">'+(u.active?'ปิดการใช้งาน':'เปิดการใช้งาน')+'</button>':'')+'</div></td></tr>').join('');
+  const rows = USERS.map(u => '<tr><td class="lead"><span class="who">'+av(u.id)+'<span><span style="font-weight:600;display:block">'+esc(u.name)+'</span><span class="sub" style="display:block">'+esc(u.pos)+'</span><span class="sub" style="display:block">'+esc(u.email||'')+'</span></span></span></td><td data-label="บทบาท">'+esc(ROLE_LABEL[u.role])+'</td><td data-label="ฝ่าย">'+esc(u.dept)+'</td><td data-label="สถานะ">'+(u.active?'<span class="chip st-done">ใช้งานอยู่</span>':'<span class="chip st-off">ปิดการใช้งาน</span>')+'</td><td data-label="จัดการ"><div class="actions">'+(can('createUser')?'<button class="btn sm" data-act="openEditUser" data-id="'+u.id+'">แก้ไข</button>':'')+(can('manageUsers')&&u.id!==S.user.id?'<button class="btn sm '+(u.active?'ghost':'')+'" data-act="toggleUser" data-id="'+u.id+'">'+(u.active?'ปิดการใช้งาน':'เปิดการใช้งาน')+'</button>':'')+'</div></td></tr>').join('');
   const isOpen = S.form && S.form.kind === 'newUser';
   return pageHead('จัดการผู้ใช้','ผู้ใช้ทั้งหมด '+USERS.length+' คน ใช้งานอยู่ '+USERS.filter(u=>u.active).length+' คน', can('createUser') ? '<button class="btn p" data-act="toggleForm" data-id="newUser" aria-expanded="'+(isOpen?'true':'false')+'">+ สร้างบัญชีผู้ใช้</button>' : '')
     + (isOpen ? newUserForm() : (S.form && S.form.kind === 'editUser' ? editUserForm(S.form.userId) : ''))
@@ -680,13 +685,12 @@ function shell(){
   const pages = PAGES.filter(p => p.show(u.role));
   if (!pages.find(p => p.k === S.page)) S.page = pages[0].k;
   const nav = pages.map(p => '<button class="'+(p.k===S.page?'on':'')+'"'+(p.k===S.page?' aria-current="page"':'')+' data-act="nav" data-id="'+p.k+'">'+navIco(p.k)+'<span>'+p.label+'</span></button>').join('');
-  const switcher = Object.keys(ROLE_LABEL).map(r => '<button class="'+(r===u.role?'on':'')+'" aria-pressed="'+(r===u.role?'true':'false')+'" data-act="login" data-id="'+r+'">'+ROLE_LABEL[r]+'</button>').join('');
-  const brand = '<div class="brand"><span class="brand-mark">'+I.grain+'</span><div><b>ติดตามโปรเจค</b><span>โปรโตไทป์ทดลอง</span></div></div>';
+  const brand = '<div class="brand"><span class="brand-mark">'+I.grain+'</span><div><b>ติดตามโปรเจค</b><span>'+esc(ROLE_LABEL[u.role])+'</span></div></div>';
   return '<div class="layout"><aside class="side">'+brand
     + '<div class="mobile-top">'+brand+'<div class="row" style="gap:6px;flex-wrap:nowrap">'+av(u.id)+'<button class="btn sm ghost" data-act="logout">ออกจากระบบ</button></div></div>'
     + '<nav class="nav" aria-label="เมนูหลัก">'+nav+'</nav>'
-    + '<div class="side-user"><div class="who">'+av(u.id, true)+'<div><div class="nm">'+esc(u.name)+'</div><div class="ps">'+esc(u.pos)+'</div></div></div><button class="btn sm" data-act="logout">ออกจากระบบ</button></div></aside>'
-    + '<div class="main"><div class="switcher" role="group" aria-label="ทดลองสลับบทบาท"><span class="lbl">'+I.flask+'ทดลองสลับบทบาท</span><div class="pills">'+switcher+'</div></div>'
+    + '<div class="side-user"><div class="who">'+av(u.id, true)+'<div><div class="nm">'+esc(u.name)+'</div><div class="ps">'+esc(u.pos)+'</div><div class="ps">'+esc(u.email)+'</div></div></div><div class="sync">'+(S.busy?'กำลังบันทึก…':'ข้อมูลล่าสุดจากเซิร์ฟเวอร์')+'</div><button class="btn sm" data-act="refresh">รีเฟรชข้อมูล</button><button class="btn sm" data-act="logout">ออกจากระบบ</button></div></aside>'
+    + '<div class="main">'
     + '<main class="content" id="main">'+pageHtml(S.page)+'</main></div></div>';
 }
 
@@ -695,8 +699,15 @@ function render(){ document.getElementById('app').innerHTML = S.user ? shell() :
 function act(a, id, kind){
   const u = S.user;
   switch(a){
-    case 'login': { const x = userById(id); if (!x || !x.active) break; S.user = x; S.page = 'dashboard'; S.view = 'list'; S.form = null; S.err = ''; break; }
-    case 'logout': S.user = null; S.form = null; S.err = ''; break;
+    case 'googleLogin': {
+      if (!sb) break;
+      S.busy = true; S.authErr = '';
+      sb.auth.signInWithOAuth({provider:'google', options:{redirectTo: location.origin + location.pathname, queryParams:{prompt:'select_account'}}})
+        .then(({error}) => { if (error) { S.busy = false; S.authErr = 'เข้าสู่ระบบไม่สำเร็จ: ' + error.message; render(); } });
+      break;
+    }
+    case 'logout': S.user = null; S.form = null; S.err = ''; S.authEmail = ''; S.authErr = ''; if (sb) sb.auth.signOut(); break;
+    case 'refresh': reloadData(); break;
     case 'nav': S.page = id; S.view = 'list'; S.form = null; S.err = ''; break;
     case 'open': S.page = 'projects'; S.view = 'detail'; S.pid = id; S.form = null; S.err = ''; break;
     case 'back': S.view = 'list'; S.form = null; S.err = ''; break;
@@ -707,8 +718,9 @@ function act(a, id, kind){
       if (!can('createProject')) break;
       const name = val('np-name').trim(), start = val('np-start'), due = val('np-due');
       if (!name || !start || !due || due < start) { S.err = 'กรุณากรอกชื่อโปรเจค วันเริ่ม และกำหนดส่งที่ไม่ก่อนวันเริ่ม'; break; }
-      const pid = 'p' + (S.projects.length + 1);
-      S.projects.push({id:pid, name, desc:val('np-desc').trim(), dept:u.dept, owner:u.id, start, due});
+      const pid = uuid(), desc = val('np-desc').trim();
+      S.projects.push({id:pid, name, desc, dept:u.dept, owner:u.id, start, due});
+      queue('projects','insert',{id:pid, name, description:desc, dept:u.dept, owner_id:u.id, start_date:start, due_date:due});
       S.pid = pid; S.view = 'detail'; S.form = null; S.err = '';
       log('สร้างโปรเจค "' + name + '"');
       break;
@@ -717,18 +729,24 @@ function act(a, id, kind){
       if (!can('createTask')) break;
       const name = val('nt-name').trim(), start = val('nt-start'), due = val('nt-due'), assignee = val('nt-assignee'), dep = val('nt-dep');
       if (!name || !start || !due || due < start) { S.err = 'กรุณากรอกชื่อ Task วันเริ่ม และกำหนดส่งที่ไม่ก่อนวันเริ่ม'; break; }
-      const au = userById(assignee);
-      S.tasks.push({id:'t' + (S.tasks.length + 1), pid:id, name, desc: val('nt-desc').trim(), creator:u.id, assignee, dept: au ? au.dept : '', status:'todo', start, due, reason:'', dependsOn:dep});
+      if (!assignee) { S.err = 'กรุณาเลือกผู้รับผิดชอบ'; break; }
+      const au = userById(assignee), tid = uuid(), desc = val('nt-desc').trim(), dept = au ? au.dept : '';
+      S.tasks.push({id:tid, pid:id, name, desc, creator:u.id, assignee, dept, status:'todo', start, due, reason:'', dependsOn:dep, comments:[]});
+      queue('tasks','insert',{id:tid, project_id:id, name, description:desc, creator_id:u.id, assignee_id:assignee, dept, status:'todo', start_date:start, due_date:due, depends_on:dep || null});
       S.form = null; S.err = '';
       log('เพิ่ม Task "' + name + '"');
       break;
     }
     case 'submitUser': {
       if (!can('createUser')) break;
-      const name = val('nu-name').trim(), pos = val('nu-pos').trim(), dept = val('nu-dept').trim(), role = val('nu-role');
-      if (!name || !pos || !dept || !role) { S.err = 'กรุณากรอกชื่อ ตำแหน่ง ฝ่าย และบทบาท'; break; }
+      const email = val('nu-email').trim().toLowerCase(), name = val('nu-name').trim(), pos = val('nu-pos').trim(), dept = val('nu-dept').trim(), role = val('nu-role');
+      if (!email || !name || !pos || !dept || !role) { S.err = 'กรุณากรอกอีเมล ชื่อ ตำแหน่ง ฝ่าย และบทบาท'; break; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { S.err = 'รูปแบบอีเมลไม่ถูกต้อง'; break; }
+      if (USERS.some(x => x.email === email)) { S.err = 'มีอีเมลนี้ในระบบแล้ว'; break; }
       if (USERS.some(x => x.name === name)) { S.err = 'มีชื่อผู้ใช้นี้อยู่แล้ว'; break; }
-      USERS.push({id:'U' + (USERS.length + 1), name, role, dept, pos, active:true});
+      const nid = uuid();
+      USERS.push({id:nid, email, name, role, dept, pos, active:true});
+      queue('members','insert',{id:nid, email, name, role, dept, pos, active:true});
       S.form = null; S.err = ''; log('สร้างบัญชีผู้ใช้ "' + name + '"');
       break;
     }
@@ -738,6 +756,7 @@ function act(a, id, kind){
       const name = val('ep-name').trim(), start = val('ep-start'), due = val('ep-due');
       if (!name || !start || !due || due < start) { S.err = 'กรุณากรอกชื่อโปรเจค วันเริ่ม และกำหนดส่งที่ไม่ก่อนวันเริ่ม'; break; }
       p.name = name; p.desc = val('ep-desc').trim(); p.start = start; p.due = due;
+      queue('projects','update',{name, description:p.desc, start_date:start, due_date:due}, p.id);
       S.form = null; S.err = ''; log('แก้ไขโปรเจค "' + name + '"');
       break;
     }
@@ -750,6 +769,7 @@ function act(a, id, kind){
       if (!text) { S.err = 'กรุณาพิมพ์ความคิดเห็น'; break; }
       t.comments = t.comments || [];
       t.comments.push({by:u.id, at: fd(TODAY) + ' ' + nowLabel(), text});
+      queue('comments','insert',{id:uuid(), task_id:t.id, author_id:u.id, body:text});
       S.err = ''; log('แสดงความคิดเห็นใน "' + t.name + '"');
       break;
     }
@@ -757,11 +777,15 @@ function act(a, id, kind){
     case 'submitEditUser': {
       if (!can('createUser')) break;
       const x = userById(id); if (!x) break;
-      const name = val('eu-name').trim(), pos = val('eu-pos').trim(), dept = val('eu-dept').trim(), role = val('eu-role');
-      if (!name || !pos || !dept || !role) { S.err = 'กรุณากรอกชื่อ ตำแหน่ง ฝ่าย และบทบาท'; break; }
+      const email = val('eu-email').trim().toLowerCase(), name = val('eu-name').trim(), pos = val('eu-pos').trim(), dept = val('eu-dept').trim(), role = val('eu-role');
+      if (!email || !name || !pos || !dept || !role) { S.err = 'กรุณากรอกอีเมล ชื่อ ตำแหน่ง ฝ่าย และบทบาท'; break; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { S.err = 'รูปแบบอีเมลไม่ถูกต้อง'; break; }
+      if (USERS.some(o => o.id !== x.id && o.email === email)) { S.err = 'มีอีเมลนี้ในระบบแล้ว'; break; }
       if (USERS.some(o => o.id !== x.id && o.name === name)) { S.err = 'มีชื่อผู้ใช้นี้อยู่แล้ว'; break; }
+      if (x.id === u.id && email !== x.email) { S.err = 'ไม่สามารถเปลี่ยนอีเมลของบัญชีที่กำลังใช้งานได้'; break; }
       if (x.id === u.id && role !== 'ADMIN') { S.err = 'ไม่สามารถเปลี่ยนบทบาทของบัญชีที่กำลังใช้งานได้'; break; }
-      x.name = name; x.pos = pos; x.dept = dept; x.role = role;
+      x.email = email; x.name = name; x.pos = pos; x.dept = dept; x.role = role;
+      queue('members','update',{email, name, pos, dept, role}, x.id);
       S.form = null; S.err = ''; log('แก้ไขข้อมูลผู้ใช้ "' + name + '"');
       break;
     }
@@ -772,6 +796,7 @@ function act(a, id, kind){
       if (dep && wouldCycle(t.id, dep)) { S.err = 'งานที่เลือกทำให้เกิดการพึ่งพาวนเป็นวงกลม'; break; }
       const au = userById(assignee);
       t.name = name; t.desc = val('et-desc').trim(); t.assignee = assignee; t.dept = au ? au.dept : t.dept; t.start = start; t.due = due; t.dependsOn = dep;
+      queue('tasks','update',{name, description:t.desc, assignee_id:assignee, dept:t.dept, start_date:start, due_date:due, depends_on:dep || null}, t.id);
       S.form = null; S.err = ''; log('แก้ไข Task "' + name + '"');
       break;
     }
@@ -781,24 +806,24 @@ function act(a, id, kind){
       if (!reason) { S.err = 'กรุณาระบุเหตุผล'; break; }
       if (S.form.kind === 'block') {
         if (!can('editTask', t)) break;
-        t.status = 'blocked'; t.reason = reason;
+        t.status = 'blocked'; t.reason = reason; queue('tasks','update',{status:'blocked', reason}, t.id);
         log('ติดขัด "' + t.name + '": ' + reason);
       } else {
         if (!can('confirmSup', t)) break;
-        t.status = 'doing'; t.reason = '';
+        t.status = 'doing'; t.reason = ''; queue('tasks','update',{status:'doing', reason:''}, t.id);
         log('ส่งกลับให้แก้ไข "' + t.name + '": ' + reason);
       }
       S.form = null; S.err = '';
       break;
     }
-    case 'start': { const t = T(id); if (t && can('editTask', t)) { t.status = 'doing'; log('เริ่มงาน "' + t.name + '"'); } break; }
-    case 'unblock': { const t = T(id); if (t && can('editTask', t)) { t.status = 'doing'; t.reason = ''; log('กลับมาดำเนินการ "' + t.name + '"'); } break; }
-    case 'confirmOwn': { const t = T(id); if (t && can('confirmOwn', t)) { t.status = 'pending'; log('ยืนยันงานเสร็จ "' + t.name + '" รอหัวหน้ายืนยัน'); } break; }
-    case 'confirmSup': { const t = T(id); if (t && can('confirmSup', t)) { t.status = 'done'; log('หัวหน้ายืนยันงานเสร็จ "' + t.name + '"'); } break; }
-    case 'unconfirm': { const t = T(id); if (t && can('confirmSup', t)) { t.status = 'pending'; log('ปลดการยืนยัน "' + t.name + '"'); } break; }
+    case 'start': { const t = T(id); if (t && can('editTask', t)) { t.status = 'doing'; queue('tasks','update',{status:'doing'}, t.id); log('เริ่มงาน "' + t.name + '"'); } break; }
+    case 'unblock': { const t = T(id); if (t && can('editTask', t)) { t.status = 'doing'; t.reason = ''; queue('tasks','update',{status:'doing', reason:''}, t.id); log('กลับมาดำเนินการ "' + t.name + '"'); } break; }
+    case 'confirmOwn': { const t = T(id); if (t && can('confirmOwn', t)) { t.status = 'pending'; queue('tasks','update',{status:'pending'}, t.id); log('ยืนยันงานเสร็จ "' + t.name + '" รอหัวหน้ายืนยัน'); } break; }
+    case 'confirmSup': { const t = T(id); if (t && can('confirmSup', t)) { t.status = 'done'; queue('tasks','update',{status:'done'}, t.id); log('หัวหน้ายืนยันงานเสร็จ "' + t.name + '"'); } break; }
+    case 'unconfirm': { const t = T(id); if (t && can('confirmSup', t)) { t.status = 'pending'; queue('tasks','update',{status:'pending'}, t.id); log('ปลดการยืนยัน "' + t.name + '"'); } break; }
     case 'toggleUser': {
       const x = userById(id);
-      if (x && can('manageUsers') && x.id !== u.id) { x.active = !x.active; log((x.active ? 'เปิด' : 'ปิด') + 'การใช้งานของ ' + x.name); }
+      if (x && can('manageUsers') && x.id !== u.id) { x.active = !x.active; queue('members','update',{active:x.active}, x.id); log((x.active ? 'เปิด' : 'ปิด') + 'การใช้งานของ ' + x.name); }
       break;
     }
     case 'toggleRec': {
@@ -824,10 +849,10 @@ function act(a, id, kind){
 
 /* ---------- UI feedback layer: keeps typed values on validation errors, manages focus, shows a toast for each logged action ---------- */
 function snapshotFields(){ const o = {}; document.querySelectorAll('#app input[id], #app textarea[id], #app select[id]').forEach(el => { o[el.id] = el.value; }); return o; }
-function toast(text){
+function toast(text, isErr){
   const box = document.getElementById('toast'); if (!box) return;
-  const el = document.createElement('div'); el.className = 'toast'; el.innerHTML = I.check + '<span>' + esc(text) + '</span>';
-  box.appendChild(el); setTimeout(() => { el.remove(); }, 3200);
+  const el = document.createElement('div'); el.className = 'toast' + (isErr ? ' err' : ''); el.innerHTML = (isErr ? I.alert : I.check) + '<span>' + esc(text) + '</span>';
+  box.appendChild(el); setTimeout(() => { el.remove(); }, isErr ? 6000 : 3200);
 }
 
 document.addEventListener('click', e => {
@@ -852,6 +877,7 @@ document.addEventListener('click', e => {
     if (same) same.focus({preventScroll:true});
   }
   if (S.log.length > prevLog) toast(S.log[0].text);
+  if (S.ops.length) flushOps();
 });
 
 document.addEventListener('keydown', e => {
@@ -863,6 +889,75 @@ document.addEventListener('keydown', e => {
     const b = document.querySelector('#app .panel [data-act="cancelForm"]'); if (b) b.click();
   }
 });
+
+/* ---------- ชั้นข้อมูล: อ่านและเขียน Supabase ---------- */
+const thTime = iso => { try { return new Date(iso).toLocaleString('th-TH', {timeZone:'Asia/Bangkok', day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}); } catch (e) { return iso; } };
+const errText = e => { const m = (e && (e.message || e.details)) || 'ไม่ทราบสาเหตุ'; if (/row-level security|permission denied/i.test(m)) return 'ไม่มีสิทธิ์ทำรายการนี้'; if (/duplicate key.*email/i.test(m)) return 'มีอีเมลนี้ในระบบแล้ว'; return m; };
+
+async function loadData(){
+  const [m, p, t, c] = await Promise.all([
+    sb.from('members').select('*').order('created_at'),
+    sb.from('projects').select('*').order('created_at'),
+    sb.from('tasks').select('*').order('start_date').order('created_at'),
+    sb.from('comments').select('*').order('created_at')
+  ]);
+  const err = m.error || p.error || t.error || c.error; if (err) throw err;
+  USERS = m.data.map(x => ({id:x.id, email:x.email, name:x.name, role:x.role, dept:x.dept, pos:x.pos, active:x.active}));
+  S.projects = p.data.map(x => ({id:x.id, name:x.name, desc:x.description, dept:x.dept, owner:x.owner_id, start:x.start_date, due:x.due_date}));
+  S.tasks = t.data.map(x => ({id:x.id, pid:x.project_id, creator:x.creator_id, name:x.name, desc:x.description, assignee:x.assignee_id, dept:x.dept, status:x.status, start:x.start_date, due:x.due_date, reason:x.reason, dependsOn:x.depends_on || '', comments:[]}));
+  c.data.forEach(x => { const tk = S.tasks.find(y => y.id === x.task_id); if (tk) tk.comments.push({by:x.author_id, at:thTime(x.created_at), text:x.body}); });
+  if (S.user) S.user = USERS.find(x => x.id === S.user.id) || S.user;
+  if (S.user && can('viewActivity')) {
+    const l = await sb.from('activity_log').select('actor_id,text,created_at').order('created_at', {ascending:false}).limit(300);
+    if (!l.error) S.log = l.data.map(x => ({at:thTime(x.created_at), who:uname(x.actor_id), text:x.text}));
+  } else S.log = [];
+}
+
+async function reloadData(){
+  try { await loadData(); } catch (e) { toast('โหลดข้อมูลไม่สำเร็จ: ' + errText(e), true); }
+  render();
+}
+
+let flushing = false;
+async function flushOps(){
+  if (flushing) return; flushing = true; S.busy = true;
+  let failed = null;
+  while (S.ops.length) {
+    const op = S.ops.shift();
+    const q = sb.from(op.table);
+    const r = op.type === 'insert' ? await q.insert(op.row) : await q.update(op.row).eq('id', op.id);
+    if (r.error && op.table !== 'activity_log') { failed = r.error; S.ops = []; break; }
+  }
+  flushing = false; S.busy = false;
+  if (failed) { toast('บันทึกไม่สำเร็จ: ' + errText(failed), true); await reloadData(); }
+  else if (!S.form) render();
+}
+
+async function applySession(session){
+  if (!session) { S.user = null; S.authEmail = ''; S.boot = false; S.busy = false; render(); return; }
+  const email = String(session.user.email || '').toLowerCase();
+  if (S.user && S.user.email === email && !S.boot) return;
+  const r = await sb.from('members').select('*').eq('email', email).maybeSingle();
+  if (r.error || !r.data || !r.data.active) {
+    S.user = null; S.authEmail = email; S.authErr = r.error ? 'ตรวจสอบสิทธิ์ไม่สำเร็จ: ' + errText(r.error) : (r.data ? 'ถูกปิดการใช้งาน' : 'ยังไม่ได้ลงทะเบียนในระบบ');
+    S.boot = false; render(); return;
+  }
+  const first = !S.user;
+  S.user = {id:r.data.id, email:r.data.email, name:r.data.name, role:r.data.role, dept:r.data.dept, pos:r.data.pos, active:r.data.active};
+  S.authEmail = ''; S.authErr = '';
+  if (first) { S.page = 'dashboard'; S.view = 'list'; S.form = null; }
+  try { await loadData(); } catch (e) { toast('โหลดข้อมูลไม่สำเร็จ: ' + errText(e), true); }
+  S.boot = false; S.busy = false; render();
+}
+
+if (sb) {
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') setTimeout(() => applySession(session), 0);
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.user && !S.form && !S.ops.length) reloadData(); });
+} else {
+  S.boot = false;
+}
 
 render();
 </script>
